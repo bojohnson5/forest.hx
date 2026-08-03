@@ -103,6 +103,11 @@
 (define *forest-search-results* '())
 (define *forest-typing?* #f)
 
+(define *forest-root* #f)
+
+(define (forest-root)
+  (or *forest-root* (helix-find-workspace)))
+
 (define *forest-default-keybinds*
   (hash 'down "j"
         'up "k"
@@ -131,6 +136,7 @@
       [else (loop (cdr ks))])))
 
 (provide forest-open)
+(provide forest-open-here)
 (provide forest-close)
 (provide forest-configure!)
 (provide forest-set-style!)
@@ -196,7 +202,7 @@
 
 ;; strips the workspace prefix so prompts show a short path instead of the full one
 (define (forest-relpath path)
-  (define prefix (string-append (helix-find-workspace) (path-separator)))
+  (define prefix (string-append (forest-root) (path-separator)))
   (if (and (>= (string-length path) (string-length prefix))
            (equal? (substring path 0 (string-length prefix)) prefix))
       (substring path (string-length prefix) (string-length path))
@@ -237,7 +243,7 @@
         (unless (hash-try-get *forest-directories* path)
           (for-each (lambda (child) (walk child (+ depth 1)))
                     (forest-sort-entries (read-dir path)))))))
-  (walk (helix-find-workspace) 0)
+  (walk (forest-root) 0)
   (set! *forest-tree* (reverse result)))
 
 (define (forest-parent-path path)
@@ -249,7 +255,7 @@
 
 ;; marks every old dir between the workspace root and path as open
 (define (forest-open-ancestors-for-file! path)
-  (define ws (helix-find-workspace))
+  (define ws (forest-root))
   (define ws-prefix (string-append ws (path-separator)))
   (when (and (string? path)
              (>= (string-length path) (string-length ws-prefix))
@@ -284,7 +290,7 @@
 ;; flat recursive file list for search
 ;; searches files indepedent of the fold state
 (define (forest-scan-files!)
-  (define root (helix-find-workspace))
+  (define root (forest-root))
   (define root-prefix (string-append root (path-separator)))
   (define acc '())
   (define (walk dir)
@@ -321,7 +327,7 @@
   (if (forest-searching?)
       (and (not (null? *forest-search-results*))
            (let ([rel (list-ref *forest-search-results* *forest-cursor*)])
-             (cons (string-append (helix-find-workspace) (path-separator) rel) rel)))
+             (cons (string-append (forest-root) (path-separator) rel) rel)))
       (and (not (null? *forest-tree*))
            (list-ref *forest-tree* *forest-cursor*))))
 
@@ -540,14 +546,15 @@
         (error "mkdir: could not spawn process"))))
 
 (define (forest-run-touch! path)
-  (let ([proc (~> (command "touch" (list path))
+  (forest-run-mkdir-p! (forest-parent-path path))
+  (let ([proc (-> (command "touch" (list path))
                   with-stdout-piped
                   with-stderr-piped
                   spawn-process)])
     (if (Ok? proc)
         (let ([stderr (read-port-to-string (child-stderr (Ok->value proc)))])
-          (when (not (string=? (trim stderr) ""))
-            (error (trim stderr))))
+        (when (not (string=? (trim stderr) ""))
+              (error (trim stderr))))
         (error "touch: could not spawn process"))))
 
 (define (forest-prompt-create!)
@@ -564,16 +571,13 @@
         (string-append "New (end with " (path-separator) " for dir): ")
         (forest-relpath base)
         (lambda (name)
-          (define full (string-append (helix-find-workspace) (path-separator) name))
+          (define full (string-append (forest-root) (path-separator) name))
           (with-handler
             (lambda (err) (forest-error (string-append "create failed: " (error-object-message err))))
             (begin
               (if (ends-with? name (path-separator))
                   (forest-run-mkdir-p! full)
-                  (begin
-                    (forest-run-mkdir-p! (forest-parent-path full))
-                    (forest-run-touch! full)
-                    (helix.open full)))
+                  (forest-run-touch! full))
               (forest-info (string-append "created " name))))
           (enqueue-thread-local-callback forest-refresh-all!)))))))
 
@@ -943,7 +947,7 @@
      (set! *forest-query* "")
      (set! *forest-search-results* '())
      (set! *forest-typing?* #f)
-     (forest-scan-git-ignored! (helix-find-workspace))
+     (forest-scan-git-ignored! (forest-root))
      (forest-reveal-current-file!)
      (forest-scan-files!)
      (push-component! (forest-make-bg-component))
@@ -954,7 +958,7 @@
 
     [else
      (set! *forest-focused* #t)
-     (forest-scan-git-ignored! (helix-find-workspace))
+     (forest-scan-git-ignored! (forest-root))
      (forest-reveal-current-file!)
      (push-component! (forest-make-fg-component))]))
 
@@ -1078,7 +1082,7 @@
 
 ;; expands ancestors down to whatever file the editor has focused
 (define (forest-mini-reveal-current-file!)
-  (define root (helix-find-workspace))
+  (define root (forest-root))
   (define path (editor-document->path (editor->doc-id (editor-focus))))
   (if (string? path)
       (forest-mini-build-stack-for root path)
@@ -1156,16 +1160,13 @@
       (string-append "New (end with " (path-separator) " for dir): ")
       (forest-relpath base)
       (lambda (name)
-        (define full (string-append (helix-find-workspace) (path-separator) name))
+        (define full (string-append (forest-root) (path-separator) name))
         (with-handler
           (lambda (err) (forest-error (string-append "create failed: " (error-object-message err))))
           (begin
             (if (ends-with? name (path-separator))
                 (forest-run-mkdir-p! full)
-                (begin
-                  (forest-run-mkdir-p! (forest-parent-path full))
-                  (forest-run-touch! full)
-                  (helix.open full)))
+                (forest-run-touch! full))
             (forest-info (string-append "created " name))))
         (enqueue-thread-local-callback forest-mini-refresh-active!))))))
 
@@ -1215,7 +1216,7 @@
 
 ;; searches the whole workspace and re-cascades the stack to the match
 (define (forest-mini-prompt-search!)
-  (define root (helix-find-workspace))
+  (define root (forest-root))
   (enqueue-thread-local-callback
    (lambda ()
      (forest-show-modal!
@@ -1405,18 +1406,31 @@
 (define (forest-mini-open!)
   (cond
     [(not *forest-active*)
-     (forest-scan-git-ignored! (helix-find-workspace))
+     (forest-scan-git-ignored! (forest-root))
      (set! *forest-mini-stack* (forest-mini-reveal-current-file!))
      (set! *forest-active* #t)
      (push-component! (forest-mini-make-component))]
     [else (forest-mini-close!)]))
 
-;;@doc
-;; Open the file tree
-(define (forest-open)
+(define (forest-open-with-root! root)
+  (when (and *forest-active* (not (equal? root *forest-root*)))
+        (forest-close))
+  (set! *forest-root* root)
   (if (equal? *forest-style* 'mini)
       (forest-mini-open!)
       (forest-snacks-open!)))
+
+;;@doc
+;; Open file tree (project root)
+(define (forest-open)
+  (forest-open-with-root! #f))
+
+;;@doc
+;; Open file tree (current file's directory)
+(define (forest-open-here)
+  (define path (editor-document->path (editor->doc-id (editor-focus))))
+  (forest-open-with-root!
+    (if (string? path) (forest-parent-path path) #f)))
 
 ;;@doc
 ;; Close the file tree

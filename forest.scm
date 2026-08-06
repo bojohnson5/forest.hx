@@ -24,8 +24,8 @@
   (hashset ".git" "target" ".direnv" "node_modules" "__pycache__" ".hg"))
 
 ;; dotfiles and git-ignored entries are hidden by default
-(define *forest-show-hidden* #f)
-(define *forest-show-git-ignored* #f)
+(define *forest-show-hidden* #t)
+(define *forest-show-git-ignored* #t)
 (define *forest-git-ignored-set* (hashset))
 
 (define (forest-dotfile? name)

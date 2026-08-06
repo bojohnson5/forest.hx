@@ -92,4 +92,4 @@ Opening the tree reveals whatever file is currently open in the editor, cascadin
 ## Notes
 
 - Requires [notify.hx](https://github.com/chuwy/notify.hx) (pulled in automatically as a dependency) for create/rename/delete notifications.
-- Uses [glyph.hx](https://github.com/Ra77a3l3-jar/glyph.hx) for all the diffrent icons.
+- Uses [glyph.hx](https://github.com/Ra77a3l3-jar/glyph.hx) for all the different icons.

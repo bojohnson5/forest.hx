@@ -31,7 +31,7 @@ forge pkg install --git https://github.com/Ra77a3l3-jar/forest.hx.git
 (require "forest/forest.scm")
 
 ;; Optional: which side the tree renders on ('left by default), and which
-;; entry names are always hidden 
+;; entry names are always hidden
 (forest-configure! 'left #:ignore (list ".git" "target" "__pycache__"))
 
 ;; Optional: which explorer UI forest-open uses ('snacks by default)
@@ -62,7 +62,7 @@ Bind `:forest-open` to a key, e.g. in `init.scm`:
 | `r` | Rename the selected entry |
 | `d` | Delete the selected entry |
 | `R` | Refresh the tree |
-| `g` | Toggle dotfiles (`.env`, `.git`, etc.) |
+| `.` | Toggle dotfiles (`.env`, `.git`, etc.) |
 | `i` | Toggle git-ignored entries |
 | `+` / `-` | Widen / narrow the panel |
 | `Esc` | Switch focus to the editor, panel stays open |
@@ -82,7 +82,7 @@ Opening or refocusing the tree reveals and centers whatever file is currently op
 | `r` | Rename the selected entry |
 | `d` | Delete the selected entry |
 | `R` | Refresh the active column |
-| `g` | Toggle dotfiles (`.env`, `.git`, etc.) |
+| `.` | Toggle dotfiles (`.env`, `.git`, etc.) |
 | `i` | Toggle git-ignored entries |
 | `+` / `-` | Widen / narrow the columns |
 | `Esc` / `q` | Close |

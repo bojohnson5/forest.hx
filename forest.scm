@@ -249,6 +249,13 @@
 (define (forest-parent-path path)
   (trim-end-matches path (string-append (path-separator) (file-name path))))
 
+;; parent of a directory, mapped safely at the filesystem root.
+;; returns #f when already at "/" so callers know to stop.
+(define (forest-dir-parent path)
+  (define raw (forest-parent-path path))
+  (define parent (if (equal? raw "") (path-separator) raw))
+  (if (equal? parent path) #f parent))
+
 (define (forest-half-floor n)
   (let loop ([n n] [h 0])
     (if (< n 2) h (loop (- n 2) (+ h 1)))))
@@ -1026,10 +1033,23 @@
      event-result/close]
     [else event-result/consume]))
 
-;; steps back to the parent column
 (define (forest-mini-back!)
-  (when (> (length *forest-mini-stack*) 1)
-    (set! *forest-mini-stack* (forest-mini-drop-last *forest-mini-stack*))))
+  (if (> (length *forest-mini-stack*) 1)
+      (set! *forest-mini-stack* (forest-mini-drop-last *forest-mini-stack*))
+      (forest-mini-reroot-up!)))
+
+;; climb above the current leftmost column: re-root at the parent dir,
+;; cursor on the directory we came from (preview pane then shows it)
+(define (forest-mini-reroot-up!)
+  (define cur (ForestMiniColumn-path (car *forest-mini-stack*)))
+  (define parent (forest-dir-parent cur))
+  (when parent
+    (set! *forest-root* parent)
+    (forest-scan-git-ignored! parent)
+    (define entries (forest-mini-list-dir parent))
+    (define idx (forest-mini-index-of (map car entries) cur))
+    (set! *forest-mini-stack*
+          (list (ForestMiniColumn parent entries (box (if idx idx 0)))))))
 
 ;; rebuilds the active column in place after a create/rename/delete
 ;; keeping the cursor in bounds

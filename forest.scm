@@ -96,7 +96,7 @@
 (define *forest-tree* '())
 (define *forest-cursor* 0)
 (define *forest-window-start* 0)
-(define *forest-visible-height* 50)
+(define *forest-visible-height* 30)
 (define *forest-directories* (hash))
 (define *forest-query* "")
 (define *forest-all-files* '())
@@ -975,28 +975,35 @@
 (define *forest-mini-min-w* 14)
 (define *forest-mini-max-w* 80)
 (define *forest-mini-min-h* 3)
-(define *forest-mini-max-h* 24)
+;; upper bound on column height; the renderer further clamps this to the
+;; visible screen height, so a large value simply means "grow to fill".
+(define *forest-mini-max-h* 100)
 (define *forest-mini-gap* 0)
 (define *forest-mini-margin* 1)
 
-;; fixed column widths, matching mini.files' defaults. the active (focused)
-;; column, the inactive ancestor columns, and the preview each get their own
-;; width instead of auto-fitting to the longest entry. tune from init.scm with
-;; (forest-mini-configure! #:width-focus .. #:width-nofocus .. #:width-preview ..)
-(define *forest-mini-width-focus* 50)
+;; fixed column widths. the active (focused) column, the inactive ancestor
+;; columns, and the preview each get their own width instead of auto-fitting to
+;; the longest entry. (mini.files' own defaults are 50 / 15 / 25; the focus
+;; column is narrowed here.) tune from init.scm with forest-mini-configure!.
+(define *forest-mini-width-focus* 30)
 (define *forest-mini-width-nofocus* 15)
 (define *forest-mini-width-preview* 25)
 
 ;;@doc
-;; Set the fixed mini-style column widths (mini.files defaults: 50 / 15 / 25).
-;; Any omitted keyword is left unchanged.
-;; (forest-mini-configure! #:width-focus 50 #:width-nofocus 15 #:width-preview 25)
+;; Set the mini-style column widths and height bounds. Columns grow with their
+;; contents up to max-height, which is itself clamped to the visible screen
+;; height. Any omitted keyword is left unchanged.
+;; (forest-mini-configure! #:width-focus 30 #:width-preview 25 #:max-height 100)
 (define (forest-mini-configure! #:width-focus [width-focus #f]
                                 #:width-nofocus [width-nofocus #f]
-                                #:width-preview [width-preview #f])
+                                #:width-preview [width-preview #f]
+                                #:max-height [max-height #f]
+                                #:min-height [min-height #f])
   (when width-focus (set! *forest-mini-width-focus* width-focus))
   (when width-nofocus (set! *forest-mini-width-nofocus* width-nofocus))
-  (when width-preview (set! *forest-mini-width-preview* width-preview)))
+  (when width-preview (set! *forest-mini-width-preview* width-preview))
+  (when max-height (set! *forest-mini-max-h* max-height))
+  (when min-height (set! *forest-mini-min-h* min-height)))
 
 (define *forest-mini-stack* '()) ; list of columns, oldest first and active last
 

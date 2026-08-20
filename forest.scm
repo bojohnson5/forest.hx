@@ -122,6 +122,8 @@
         'toggle-git-ignored "i"
         'wider "+"
         'narrower "-"
+        'trim-left "<" ; mini only: prune the leftmost (oldest ancestor) column
+        'trim-right ">" ; mini only: prune the rightmost (deepest) column
         'quit "q"))
 
 (define *forest-keybinds* *forest-default-keybinds*)
@@ -141,6 +143,7 @@
 (provide forest-configure!)
 (provide forest-set-style!)
 (provide forest-set-keybinds!)
+(provide forest-mini-configure!)
 
 ;;@doc
 ;; Override any subset of forest's keybindings from init.scm
@@ -970,11 +973,30 @@
      (push-component! (forest-make-fg-component))]))
 
 (define *forest-mini-min-w* 14)
-(define *forest-mini-max-w* 40)
+(define *forest-mini-max-w* 80)
 (define *forest-mini-min-h* 3)
 (define *forest-mini-max-h* 24)
 (define *forest-mini-gap* 0)
 (define *forest-mini-margin* 1)
+
+;; fixed column widths, matching mini.files' defaults. the active (focused)
+;; column, the inactive ancestor columns, and the preview each get their own
+;; width instead of auto-fitting to the longest entry. tune from init.scm with
+;; (forest-mini-configure! #:width-focus .. #:width-nofocus .. #:width-preview ..)
+(define *forest-mini-width-focus* 50)
+(define *forest-mini-width-nofocus* 15)
+(define *forest-mini-width-preview* 25)
+
+;;@doc
+;; Set the fixed mini-style column widths (mini.files defaults: 50 / 15 / 25).
+;; Any omitted keyword is left unchanged.
+;; (forest-mini-configure! #:width-focus 50 #:width-nofocus 15 #:width-preview 25)
+(define (forest-mini-configure! #:width-focus [width-focus #f]
+                                #:width-nofocus [width-nofocus #f]
+                                #:width-preview [width-preview #f])
+  (when width-focus (set! *forest-mini-width-focus* width-focus))
+  (when width-nofocus (set! *forest-mini-width-nofocus* width-nofocus))
+  (when width-preview (set! *forest-mini-width-preview* width-preview)))
 
 (define *forest-mini-stack* '()) ; list of columns, oldest first and active last
 
@@ -1051,6 +1073,21 @@
     (set! *forest-mini-stack*
           (list (ForestMiniColumn parent entries (box (if idx idx 0)))))))
 
+;; prune one directory level from the left edge: drop the oldest ancestor
+;; column. the active (rightmost) column and preview are untouched. mini.files
+;; binds this to < (trim_left). repeat to collapse further; never drops the
+;; last remaining column.
+(define (forest-mini-trim-left!)
+  (when (> (length *forest-mini-stack*) 1)
+    (set! *forest-mini-stack* (cdr *forest-mini-stack*))))
+
+;; prune one directory level from the right edge: drop the deepest column and
+;; let focus fall back to its parent. mini.files binds this to > (trim_right).
+;; like `back`, but it never re-roots above the current leftmost column.
+(define (forest-mini-trim-right!)
+  (when (> (length *forest-mini-stack*) 1)
+    (set! *forest-mini-stack* (forest-mini-drop-last *forest-mini-stack*))))
+
 ;; rebuilds the active column in place after a create/rename/delete
 ;; keeping the cursor in bounds
 (define (forest-mini-refresh-active!)
@@ -1100,12 +1137,17 @@
            (loop (car (list-ref entries idx)) (cdr comps) (cons col acc))
            (reverse (cons col acc)))])))
 
-;; expands ancestors down to whatever file the editor has focused
+;; opens a single column anchored at the current file's directory, with the
+;; cursor resting on that file. mini.files-style: one pane on open, never a
+;; cascade of one column per ancestor. use > to reveal parents, < to prune.
 (define (forest-mini-reveal-current-file!)
   (define root (forest-root))
   (define path (editor-document->path (editor->doc-id (editor-focus))))
-  (if (string? path)
-      (forest-mini-build-stack-for root path)
+  (if (and (string? path) (> (string-length path) 0))
+      (let* ([dir (forest-parent-path path)]
+             [entries (forest-mini-list-dir dir)]
+             [idx (forest-mini-index-of (map car entries) path)])
+        (list (ForestMiniColumn dir entries (box (if idx idx 0)))))
       (list (ForestMiniColumn root (forest-mini-list-dir root) (box 0)))))
 
 ;; flat recursive file list for search, independent of the cascaded columns
@@ -1292,6 +1334,16 @@
       (frame-set-string! frame x (+ y0 row) (forest-truncate (car items) w) style)
       (iloop (cdr items) (+ row 1)))))
 
+;; per-role widths, clamped. the +/- boost is applied to the focused column and
+;; the preview; inactive ancestor columns keep the fixed nofocus width.
+(define (forest-mini-focus-width)
+  (min *forest-mini-max-w*
+       (max *forest-mini-min-w* (+ *forest-mini-width-focus* *forest-mini-width-boost*))))
+
+(define (forest-mini-preview-width)
+  (min *forest-mini-preview-max-w*
+       (max *forest-mini-preview-min-w* (+ *forest-mini-width-preview* *forest-mini-width-boost*))))
+
 (define (forest-mini-render state rect frame)
   (define sw (area-width rect))
   (define sh (area-height rect))
@@ -1310,7 +1362,10 @@
   (define col-specs
     (map (lambda (col)
            (define entries (ForestMiniColumn-entries col))
-           (list 'col col (forest-mini-col-width entries) (forest-mini-col-height (length entries) max-h)))
+           (define w (if (equal? col active-col)
+                         (forest-mini-focus-width)
+                         *forest-mini-width-nofocus*))
+           (list 'col col w (forest-mini-col-height (length entries) max-h)))
          *forest-mini-stack*))
 
   (define preview (forest-mini-preview))
@@ -1320,14 +1375,11 @@
     (cond
       [(equal? preview-kind 'dir)
        (list 'preview-dir preview-data
-             (forest-mini-col-width preview-data) (forest-mini-col-height (length preview-data) max-h))]
+             (forest-mini-preview-width) (forest-mini-col-height (length preview-data) max-h))]
       [(equal? preview-kind 'file)
        (list 'preview-file preview-data
-             (min *forest-mini-preview-max-w*
-                  (max *forest-mini-preview-min-w*
-                       (+ (forest-mini-longest-line preview-data *forest-mini-preview-max-w*) 4 *forest-mini-width-boost*)))
-             (forest-mini-col-height (length preview-data) max-h))]
-      [else (list 'preview-empty #f *forest-mini-min-w* *forest-mini-min-h*)]))
+             (forest-mini-preview-width) (forest-mini-col-height (length preview-data) max-h))]
+      [else (list 'preview-empty #f *forest-mini-width-preview* *forest-mini-min-h*)]))
 
   (define all-specs (append col-specs (list preview-spec)))
 
@@ -1398,6 +1450,8 @@
     [(equal? action 'toggle-git-ignored) (forest-toggle-git-ignored!) event-result/consume]
     [(equal? action 'wider) (forest-mini-wider!) event-result/consume]
     [(equal? action 'narrower) (forest-mini-narrower!) event-result/consume]
+    [(equal? action 'trim-left) (forest-mini-trim-left!) event-result/consume]
+    [(equal? action 'trim-right) (forest-mini-trim-right!) event-result/consume]
     [else event-result/consume]))
 
 (define (forest-mini-handle-event state event)

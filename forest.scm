@@ -1137,18 +1137,24 @@
            (loop (car (list-ref entries idx)) (cdr comps) (cons col acc))
            (reverse (cons col acc)))])))
 
-;; opens a single column anchored at the current file's directory, with the
-;; cursor resting on that file. mini.files-style: one pane on open, never a
-;; cascade of one column per ancestor. use > to reveal parents, < to prune.
+;; opens a single column anchored at forest-root (project root for
+;; forest-open, the file's directory for forest-open-here), with the cursor
+;; resting on whichever entry leads toward the current file. mini.files-style:
+;; one pane on open, never a cascade of one column per ancestor. use > to
+;; reveal parents, < to prune.
 (define (forest-mini-reveal-current-file!)
   (define root (forest-root))
   (define path (editor-document->path (editor->doc-id (editor-focus))))
-  (if (and (string? path) (> (string-length path) 0))
-      (let* ([dir (forest-parent-path path)]
-             [entries (forest-mini-list-dir dir)]
-             [idx (forest-mini-index-of (map car entries) path)])
-        (list (ForestMiniColumn dir entries (box (if idx idx 0)))))
-      (list (ForestMiniColumn root (forest-mini-list-dir root) (box 0)))))
+  (define entries (forest-mini-list-dir root))
+  (define comps
+    (if (and (string? path) (> (string-length path) 0))
+        (forest-mini-relative-components root path)
+        '()))
+  (define idx
+    (if (null? comps)
+        0
+        (or (forest-mini-index-of (map cdr entries) (car comps)) 0)))
+  (list (ForestMiniColumn root entries (box idx))))
 
 ;; flat recursive file list for search, independent of the cascaded columns
 (define (forest-mini-scan-files root)

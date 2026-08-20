@@ -96,7 +96,7 @@
 (define *forest-tree* '())
 (define *forest-cursor* 0)
 (define *forest-window-start* 0)
-(define *forest-visible-height* 30)
+(define *forest-visible-height* 50)
 (define *forest-directories* (hash))
 (define *forest-query* "")
 (define *forest-all-files* '())
